@@ -12,6 +12,7 @@ try:
     import elftools
 except ImportError:
     import re
+    from sys import platform as _platform
 
     def get_soname(filename):
         """
@@ -32,21 +33,36 @@ except ImportError:
         This function uses the `objdump` system command.
         
         """
-        
-        try:
-            p = subprocess.Popen(['objdump', '-p', filename],
-                                 stdout=subprocess.PIPE)
-            out = p.communicate()[0]
-        except:
-            raise RuntimeError('error executing objdump')
-        else:
-            result = re.search('^\s+SONAME\s+(.+)$',out,re.MULTILINE)
-            if result:
-                return result.group(1)
+        if _platform == "linux" or _platform == "linux2":
+            try:
+                p = subprocess.Popen(['objdump', '-p', filename],
+                                     stdout=subprocess.PIPE)
+                out = p.communicate()[0]
+            except:
+                raise RuntimeError('error executing objdump')
             else:
+                result = re.search('^\s+SONAME\s+(.+)$',out,re.MULTILINE)
+                if result:
+                    return result.group(1)
+                else:
+                    # No SONAME found:
+                    return ''
+        elif _platform == "darwin":
+            import os
+            try:
+                p = subprocess.Popen(['otool','-L',filename],
+                                    stdout=subprocess.PIPE)
+                out = p.communicate()[0]
+            except:
+                raise RuntimeError('error executing otool')
+            else:
+                result = "libcublas.so." + re.search('^.*\s[0-9]',out.split(os.linesep)[1]).group(0)[-1] + ".0"
+                if result:
+                    return result
+                else:
+                    # No SONAME found:
+                    return ''
 
-                # No SONAME found:
-                return ''
 
 else:
     import ctypes
@@ -111,7 +127,7 @@ class DL_info(ctypes.Structure):
                 ('dli_fbase', ctypes.c_void_p),
                 ('dli_sname', ctypes.c_char_p),
                 ('dli_saddr', ctypes.c_void_p)]
-libdl = ctypes.cdll.LoadLibrary('libdl.so')
+libdl = ctypes.cdll.LoadLibrary('libdl.dylib')
 libdl.dladdr.restype = int
 libdl.dladdr.argtypes = [ctypes.c_void_p,
                          ctypes.c_void_p]
